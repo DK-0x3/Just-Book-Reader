@@ -1,0 +1,52 @@
+:root {
+  color-scheme: dark;
+  --background-primary: #1e1e22;
+  --background-secondary: #25252b;
+  --text-normal: #eeeef3;
+  --text-muted: #aaaab7;
+  --background-modifier-border: #393940;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+body {
+  margin: 0;
+}
+
+.dev-shell {
+  min-height: 100dvh;
+}
+
+.dev-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 24px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 12px;
+
+  > span {
+    flex: 1 1 220px;
+  }
+
+  :is(button, select) {
+    font: inherit;
+    color: var(--text-normal);
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 6px 10px;
+
+    &:focus-visible {
+      outline: 2px solid var(--text-normal);
+      outline-offset: 2px;
+    }
+  }
+
+  button {
+    cursor: pointer;
+  }
+}

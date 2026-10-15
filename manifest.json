@@ -1,0 +1,9 @@
+{
+  "id": "just-book-reader",
+  "name": "Just Book Reader",
+  "version": "0.0.1",
+  "minAppVersion": "1.5.0",
+  "description": "A foundation for an EPUB book gallery inside Obsidian.",
+  "author": "DK_0x3",
+  "isDesktopOnly": false
+}

@@ -1,0 +1,24 @@
+# Local development instructions and context
+/AGENTS.md
+/docs/
+/NEW-READER-VUE-IMPLEMENTATION.md
+
+# Local environment and private data
+/.idea/
+.DS_Store
+.env
+.env.*
+!.env.example
+/local-books/
+/test-vault/
+
+# Dependencies, generated files and reports
+/node_modules/
+/dist/
+/coverage/
+/playwright-report/
+/test-results/
+/main.js
+/styles.css
+*.tsbuildinfo
+*.log

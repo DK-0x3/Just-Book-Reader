@@ -1,0 +1,19 @@
+{
+  "library": {
+    "title": "Библиотека",
+    "preparing": "Библиотека готовится к работе.",
+    "nextStage": "Список EPUB появится на следующем этапе."
+  },
+  "commands": {
+    "openLibrary": "Открыть библиотеку"
+  },
+  "errors": {
+    "openLibrary": "Just Book Reader: не удалось открыть библиотеку."
+  },
+  "development": {
+    "title": "Браузерный стенд · Just Book Reader",
+    "language": "Язык",
+    "closeView": "Закрыть view",
+    "openView": "Открыть view"
+  }
+}
