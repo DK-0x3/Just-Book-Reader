@@ -18,6 +18,7 @@
 /coverage/
 /playwright-report/
 /test-results/
+/.vitest/
 /main.js
 /styles.css
 *.tsbuildinfo

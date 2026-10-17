@@ -1,8 +1,12 @@
 {
   "library": {
     "title": "Библиотека",
-    "preparing": "Библиотека готовится к работе.",
-    "nextStage": "Список EPUB появится на следующем этапе."
+    "books": "Книги EPUB",
+    "refresh": "Обновить",
+    "scanning": "Поиск файлов EPUB…",
+    "error": "Не удалось загрузить библиотеку. Попробуйте обновить список.",
+    "empty": "Файлы EPUB не найдены.",
+    "emptyHint": "Добавьте файлы EPUB в хранилище, чтобы увидеть их здесь."
   },
   "commands": {
     "openLibrary": "Открыть библиотеку"
@@ -13,6 +17,8 @@
   "development": {
     "title": "Браузерный стенд · Just Book Reader",
     "language": "Язык",
+    "chooseFiles": "Выбрать EPUB",
+    "clearFiles": "Очистить список",
     "closeView": "Закрыть view",
     "openView": "Открыть view"
   }

@@ -1,8 +1,12 @@
 {
   "library": {
     "title": "Library",
-    "preparing": "The library is taking shape.",
-    "nextStage": "EPUB listing will arrive in the next stage."
+    "books": "EPUB books",
+    "refresh": "Refresh",
+    "scanning": "Scanning for EPUB files…",
+    "error": "Could not load the library. Try refreshing.",
+    "empty": "No EPUB files found.",
+    "emptyHint": "Add EPUB files to the vault to see them here."
   },
   "commands": {
     "openLibrary": "Open library"
@@ -13,6 +17,8 @@
   "development": {
     "title": "Browser harness · Just Book Reader",
     "language": "Language",
+    "chooseFiles": "Choose EPUB",
+    "clearFiles": "Clear files",
     "closeView": "Close view",
     "openView": "Open view"
   }

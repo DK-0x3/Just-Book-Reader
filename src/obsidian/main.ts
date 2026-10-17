@@ -3,11 +3,14 @@ import { createApp, type App as VueApp } from 'vue';
 import GalleryApp from '../ui/GalleryApp.vue';
 import { createLocalization, type Localization } from '../i18n';
 import './styles.scss';
+import { LibraryService } from '../app/library-service';
+import { createObsidianVault } from './vault';
 
 const VIEW_TYPE = 'just-book-reader-library';
 
 class GalleryView extends ItemView {
   private vue?: VueApp;
+  private service?: LibraryService;
 
   getViewType(): string { return VIEW_TYPE; }
   getDisplayText(): string { return 'Just Book Reader'; }
@@ -16,14 +19,17 @@ class GalleryView extends ItemView {
   async onOpen(): Promise<void> {
     this.contentEl.empty();
     this.contentEl.addClass('jbr-view-content');
-    this.vue = createApp(GalleryApp);
+    this.service = new LibraryService(createObsidianVault(this.app));
+    this.vue = createApp(GalleryApp, { service: this.service });
     this.vue.use(createLocalization(moment.locale()));
     this.vue.mount(this.contentEl);
   }
 
   async onClose(): Promise<void> {
     this.vue?.unmount();
+    this.service?.destroy();
     this.vue = undefined;
+    this.service = undefined;
     this.contentEl.removeClass('jbr-view-content');
     this.contentEl.empty();
   }

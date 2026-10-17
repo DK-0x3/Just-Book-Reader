@@ -1,4 +1,4 @@
-// Obsidian owns this container, outside the component's scoped styles.
+// Obsidian owns this container; keep its integration class global and stable.
 .jbr-view-content {
   padding: 0 !important;
 }
