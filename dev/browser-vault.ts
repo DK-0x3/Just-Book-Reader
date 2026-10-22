@@ -1,12 +1,21 @@
 import { isEpubPath, type BookFile, type BookVault, type VaultChange } from '../src/domain/library';
 
-/** Selected files stay in memory. There is no upload or binary read in this stage. */
+/** Selected files stay in memory. Reading stays local; there is no upload. */
 export class BrowserVault implements BookVault {
   private files = new Map<string, File>();
   private listeners = new Set<(change: VaultChange) => void>();
 
   async list(): Promise<BookFile[]> {
     return [...this.files.values()].map(file => this.describe(file));
+  }
+
+  async read(book: BookFile, signal: AbortSignal): Promise<ArrayBuffer> {
+    signal.throwIfAborted();
+    const file = this.files.get(book.path);
+    if (!file || file.size !== book.size || file.lastModified !== book.mtime) throw new Error('file-changed');
+    const data = await file.arrayBuffer();
+    signal.throwIfAborted();
+    return data;
   }
 
   subscribe(listener: (change: VaultChange) => void): () => void {

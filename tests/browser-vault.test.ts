@@ -33,11 +33,11 @@ describe('browser catalog adapter', () => {
 
   it('keeps selected files across view service close/reopen and clears a live catalog', async () => {
     const vault = new BrowserVault();
-    const first = new LibraryService(vault);
+    const first = new LibraryService(vault, async () => ({}));
     vault.add([new File([], 'First.epub')]);
     first.destroy();
     vault.add([new File([], 'WhileClosed.epub')]);
-    const second = new LibraryService(vault);
+    const second = new LibraryService(vault, async () => ({}));
     let snapshot: LibrarySnapshot = { books: [], scanning: false };
     second.subscribe(value => { snapshot = value; });
     await second.scan();
@@ -45,5 +45,25 @@ describe('browser catalog adapter', () => {
     vault.clear();
     await vi.waitFor(() => expect(snapshot.books).toEqual([]));
     second.destroy();
+  });
+});
+
+describe('browser binary access', () => {
+  it('reads only the requested file and rejects removed, changed and aborted files', async () => {
+    const vault = new BrowserVault();
+    const file = new File(['local bytes'], 'book.epub', { lastModified: 1 });
+    const read = vi.spyOn(file, 'arrayBuffer');
+    vault.add([file]);
+    const book = (await vault.list())[0]!;
+    const signal = new AbortController().signal;
+    expect(new TextDecoder().decode(await vault.read(book, signal))).toBe('local bytes');
+    const aborted = new AbortController();
+    aborted.abort();
+    await expect(vault.read(book, aborted.signal)).rejects.toMatchObject({ name: 'AbortError' });
+    expect(read).toHaveBeenCalledOnce();
+    vault.add([new File(['replacement'], 'book.epub', { lastModified: 2 })]);
+    await expect(vault.read(book, signal)).rejects.toThrow('file-changed');
+    vault.clear();
+    await expect(vault.read(book, signal)).rejects.toThrow('file-changed');
   });
 });

@@ -1,3 +1,4 @@
+import { readEpubMetadata } from '../src/infrastructure/epub/metadata';
 import { createApp, h, ref, shallowRef } from 'vue';
 import GalleryApp from '../src/ui/GalleryApp.vue';
 import { createLocalization, resolveLocale } from '../src/i18n';
@@ -8,7 +9,7 @@ import { BrowserVault } from './browser-vault';
 const localization = createLocalization('ru');
 const { locale, t } = localization.global;
 const vault = new BrowserVault();
-const service = shallowRef<LibraryService | null>(new LibraryService(vault));
+const service = shallowRef<LibraryService | null>(new LibraryService(vault, readEpubMetadata));
 const upload = ref<HTMLInputElement>();
 let viewId = 0;
 function toggleView(): void {
@@ -16,7 +17,7 @@ function toggleView(): void {
     service.value.destroy();
     service.value = null;
   } else {
-    service.value = new LibraryService(vault);
+    service.value = new LibraryService(vault, readEpubMetadata);
     viewId++;
   }
 }

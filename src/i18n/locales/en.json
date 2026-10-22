@@ -6,7 +6,8 @@
     "scanning": "Scanning for EPUB files…",
     "error": "Could not load the library. Try refreshing.",
     "empty": "No EPUB files found.",
-    "emptyHint": "Add EPUB files to the vault to see them here."
+    "emptyHint": "Add EPUB files to the vault to see them here.",
+    "metadataError": "Could not read book information."
   },
   "commands": {
     "openLibrary": "Open library"

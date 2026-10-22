@@ -5,8 +5,19 @@ export interface BookFile {
   readonly mtime: number;
 }
 
+export interface BookMetadata {
+  readonly title?: string;
+  readonly author?: string;
+  readonly cover?: Blob;
+}
+
+export type MetadataReader = (data: ArrayBuffer, signal: AbortSignal) => Promise<BookMetadata>;
+
 export interface Book extends BookFile {
   readonly title: string;
+  readonly author?: string;
+  readonly coverUrl?: string;
+  readonly metadataStatus: 'idle' | 'loading' | 'ready' | 'error';
 }
 
 export interface LibrarySnapshot {
@@ -21,9 +32,10 @@ export type VaultChange =
   | { type: 'remove'; path: string }
   | { type: 'rename'; oldPath: string; file: BookFile };
 
-/** Catalog access only. Binary reading is introduced with EPUB metadata. */
+/** Host-specific file access; metadata parsing belongs to a separate reader. */
 export interface BookVault {
   list(): Promise<readonly BookFile[]>;
+  read(file: BookFile, signal: AbortSignal): Promise<ArrayBuffer>;
   subscribe(listener: (change: VaultChange) => void): () => void;
 }
 

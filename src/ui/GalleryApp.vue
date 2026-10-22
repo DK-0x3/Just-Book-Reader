@@ -38,7 +38,7 @@ onUnmounted(() => { stop?.(); });
       </div>
       <ul v-if="snapshot.books.length" :class="$style.grid" :aria-label="t('library.books')">
         <li v-for="book in snapshot.books" :key="book.path">
-          <BookCard :book="book" />
+          <BookCard :book="book" @visibility="(path, visible) => service.setVisible(path, visible)" />
         </li>
       </ul>
     </div>

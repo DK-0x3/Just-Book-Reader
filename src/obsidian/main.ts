@@ -5,6 +5,7 @@ import { createLocalization, type Localization } from '../i18n';
 import './styles.scss';
 import { LibraryService } from '../app/library-service';
 import { createObsidianVault } from './vault';
+import { readEpubMetadata } from '../infrastructure/epub/metadata';
 
 const VIEW_TYPE = 'just-book-reader-library';
 
@@ -19,7 +20,7 @@ class GalleryView extends ItemView {
   async onOpen(): Promise<void> {
     this.contentEl.empty();
     this.contentEl.addClass('jbr-view-content');
-    this.service = new LibraryService(createObsidianVault(this.app));
+    this.service = new LibraryService(createObsidianVault(this.app), readEpubMetadata);
     this.vue = createApp(GalleryApp, { service: this.service });
     this.vue.use(createLocalization(moment.locale()));
     this.vue.mount(this.contentEl);
