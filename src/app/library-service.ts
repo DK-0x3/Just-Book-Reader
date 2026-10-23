@@ -1,6 +1,10 @@
 import type { Book, BookFile, BookVault, LibrarySnapshot, MetadataReader, VaultChange } from '../domain/library';
 import { MAX_EPUB_BYTES } from '../domain/epub-limits';
 
+const MAX_METADATA_JOBS = 2;
+const MAX_CACHED_COVERS = 64;
+const MAX_CACHED_COVER_BYTES = 24 * 1024 * 1024;
+
 /** One view owns the catalog, lazy metadata work and cover URLs. */
 export class LibraryService {
   private records = new Map<string, Book>();
@@ -12,7 +16,11 @@ export class LibraryService {
   private scanning = false;
   private scanError?: 'vault';
   private visible = new Set<string>();
-  private active?: { path: string; controller: AbortController };
+  private queue = new Set<string>();
+  private jobs = new Map<string, AbortController>();
+  private activeMetadataJobCount = 0;
+  private covers = new Map<string, { url: string; size: number }>();
+  private coverBytes = 0;
 
   constructor(private vault: BookVault, private readMetadata: MetadataReader) {
     this.stopVault = vault.subscribe(change => this.onChange(change));
@@ -45,6 +53,7 @@ export class LibraryService {
       for (const file of files) this.upsert(file);
       for (const [path, book] of this.records) {
         if (book.metadataStatus === 'error') this.records.set(path, { ...book, metadataStatus: 'idle' });
+        this.enqueue(path);
       }
     } catch {
       if (!this.destroyed && generation === this.scanGeneration) this.scanError = 'vault';
@@ -52,33 +61,44 @@ export class LibraryService {
       if (!this.destroyed && generation === this.scanGeneration) {
         this.scanning = false;
         this.emit();
-        void this.loadNext();
+        this.pump();
       }
     }
   }
 
   setVisible(path: string, visible: boolean): void {
     if (this.destroyed) return;
-    if (visible) this.visible.add(path);
-    else {
+    let changed = false;
+    if (visible) {
+      this.visible.add(path);
+      const cover = this.covers.get(path);
+      if (cover) {
+        this.covers.delete(path);
+        this.covers.set(path, cover);
+      }
+      this.enqueue(path);
+    } else {
       this.visible.delete(path);
       this.cancel(path);
       const book = this.records.get(path);
-      if (book && (book.coverUrl || book.metadataStatus === 'loading')) {
-        this.releaseCover(book);
-        this.records.set(path, { ...book, coverUrl: undefined, metadataStatus: 'idle' });
-        this.emit();
+      if (book?.metadataStatus === 'loading') {
+        this.records.set(path, { ...book, metadataStatus: 'idle' });
+        changed = true;
       }
+      changed = this.trimCovers() || changed;
     }
-    void this.loadNext();
+    if (changed) this.emit();
+    this.pump();
   }
 
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     this.stopVault();
-    this.active?.controller.abort();
-    for (const book of this.records.values()) this.releaseCover(book);
+    for (const controller of this.jobs.values()) controller.abort();
+    this.jobs.clear();
+    this.queue.clear();
+    for (const path of this.covers.keys()) this.releaseCover(path);
     this.visible.clear();
     this.records.clear();
     this.listeners.clear();
@@ -105,63 +125,104 @@ export class LibraryService {
       this.upsert(change.file);
     }
     this.emit();
-    void this.loadNext();
+    this.pump();
   }
 
   private upsert(file: BookFile): void {
     const existing = this.records.get(file.path);
     if (existing && existing.name === file.name && existing.size === file.size && existing.mtime === file.mtime) return;
     this.cancel(file.path);
-    if (existing) this.releaseCover(existing);
+    this.releaseCover(file.path);
     this.records.set(file.path, { ...file, title: file.name, metadataStatus: 'idle' });
+    this.enqueue(file.path);
   }
 
   private cancel(path: string): void {
-    if (this.active?.path === path) this.active.controller.abort();
+    this.queue.delete(path);
+    this.jobs.get(path)?.abort();
+    this.jobs.delete(path);
   }
 
-  private releaseCover(book: Book): void {
-    if (book.coverUrl) URL.revokeObjectURL(book.coverUrl);
+  private releaseCover(path: string): void {
+    const cover = this.covers.get(path);
+    if (!cover) return;
+    URL.revokeObjectURL(cover.url);
+    this.coverBytes -= cover.size;
+    this.covers.delete(path);
+  }
+
+  private trimCovers(): boolean {
+    let changed = false;
+    // Map order is least recently used first. Visible covers stay even when they exceed the budget.
+    for (const path of this.covers.keys()) {
+      if (this.covers.size <= MAX_CACHED_COVERS && this.coverBytes <= MAX_CACHED_COVER_BYTES) break;
+      if (this.visible.has(path)) continue;
+      this.releaseCover(path);
+      const book = this.records.get(path);
+      if (book) this.records.set(path, { ...book, coverUrl: undefined, metadataStatus: 'idle' });
+      changed = true;
+    }
+    return changed;
   }
 
   private remove(path: string): void {
     this.cancel(path);
-    const book = this.records.get(path);
-    if (book) this.releaseCover(book);
+    this.releaseCover(path);
     this.records.delete(path);
+    // Vue may reuse a card for a remove/create pair within one render; unmount clears visibility.
   }
 
-  private async loadNext(): Promise<void> {
-    if (this.destroyed || this.active) return;
-    const next = [...this.visible].map(path => this.records.get(path)).find(book => book?.metadataStatus === 'idle');
-    if (!next) return;
-    const job = { path: next.path, controller: new AbortController() };
-    const loading: Book = { ...next, metadataStatus: 'loading' };
-    this.active = job;
-    this.records.set(next.path, loading);
-    this.emit();
-    const signal = job.controller.signal;
+  private enqueue(path: string): void {
+    if (this.visible.has(path) && this.records.get(path)?.metadataStatus === 'idle') this.queue.add(path);
+  }
+
+  private pump(): void {
+    while (!this.destroyed && this.activeMetadataJobCount < MAX_METADATA_JOBS && this.queue.size) {
+      const path = this.queue.values().next().value!;
+      this.queue.delete(path);
+      const book = this.records.get(path);
+      if (!this.visible.has(path) || !book || book.metadataStatus !== 'idle' || this.jobs.has(path)) continue;
+      const controller = new AbortController();
+      const loading: Book = { ...book, metadataStatus: 'loading' };
+      this.jobs.set(path, controller);
+      this.records.set(path, loading);
+      this.activeMetadataJobCount++;
+      this.emit();
+      void this.load(loading, controller).finally(() => {
+        // A cancelled native read still occupies its slot until it actually settles.
+        this.activeMetadataJobCount--;
+        if (this.jobs.get(path) === controller) this.jobs.delete(path);
+        this.enqueue(path);
+        this.pump();
+      });
+    }
+  }
+
+  private async load(loading: Book, controller: AbortController): Promise<void> {
+    const { signal } = controller;
+    const current = () => !this.destroyed && this.jobs.get(loading.path) === controller
+      && this.records.get(loading.path) === loading;
     try {
-      if (next.size > MAX_EPUB_BYTES) throw new Error('too-large');
-      const data = await this.vault.read(next, signal);
+      if (loading.size > MAX_EPUB_BYTES) throw new Error('too-large');
+      const data = await this.vault.read(loading, signal);
       signal.throwIfAborted();
       const metadata = await this.readMetadata(data, signal);
       signal.throwIfAborted();
-      // A renamed/replaced file or closed view must never receive an older result.
-      if (this.destroyed || this.records.get(next.path) !== loading) return;
+      if (!current()) return;
       const coverUrl = metadata.cover ? URL.createObjectURL(metadata.cover) : undefined;
-      this.records.set(next.path, {
-        ...loading, title: metadata.title || next.name, author: metadata.author,
+      if (coverUrl && metadata.cover) {
+        this.covers.set(loading.path, { url: coverUrl, size: metadata.cover.size });
+        this.coverBytes += metadata.cover.size;
+      }
+      this.records.set(loading.path, {
+        ...loading, title: metadata.title || loading.name, author: metadata.author,
         coverUrl, metadataStatus: 'ready',
       });
+      this.trimCovers();
     } catch {
-      if (!this.destroyed && this.records.get(next.path) === loading) {
-        this.records.set(next.path, { ...loading, metadataStatus: signal.aborted ? 'idle' : 'error' });
-      }
-    } finally {
-      this.active = undefined;
-      this.emit();
-      void this.loadNext();
+      if (!current()) return;
+      this.records.set(loading.path, { ...loading, metadataStatus: signal.aborted ? 'idle' : 'error' });
     }
+    this.emit();
   }
 }

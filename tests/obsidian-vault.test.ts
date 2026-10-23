@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TFile, type App } from 'obsidian';
-import { createObsidianVault } from '../src/ui/vault';
+import { createObsidianVault } from '../src/obsidian/vault';
 
 describe('Obsidian binary adapter', () => {
   it('reads the current TFile and rejects changed, missing and cancelled reads', async () => {

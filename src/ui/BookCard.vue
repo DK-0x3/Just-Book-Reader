@@ -3,6 +3,8 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { Book } from '../domain/library';
 
+const METADATA_PRELOAD_MARGIN = '180px';
+
 const props = defineProps<{ book: Book }>();
 const emit = defineEmits<{ visibility: [path: string, visible: boolean] }>();
 const { t } = useI18n({ useScope: 'global' });
@@ -16,7 +18,7 @@ onMounted(() => {
   if (!card.value) return;
   observer = new IntersectionObserver(entries => {
     for (const entry of entries) emit('visibility', props.book.path, entry.isIntersecting);
-  });
+  }, { rootMargin: METADATA_PRELOAD_MARGIN });
   observer.observe(card.value);
 });
 onUnmounted(() => {

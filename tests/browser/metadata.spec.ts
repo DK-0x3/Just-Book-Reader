@@ -98,22 +98,28 @@ test('rejects unsafe, malformed and oversized XML and unsafe package paths', asy
   for (const entry of cases) expect(await parse(page, await makeEpub(entry.options))).toMatchObject({ error: entry.error });
 });
 
-test('loads cards only after visibility and releases cover URLs on hide, clear and close', async ({ page }) => {
+test('preloads nearby cards, reuses cached covers on return and releases URLs on clear and close', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({ width: 375, height: 736 });
   await page.addInitScript(() => {
-    const stats = { reads: [] as string[], created: [] as string[], revoked: [] as string[] };
+    const stats = { reads: [] as string[], created: [] as string[], revoked: [] as string[], preloaded: [] as string[] };
     Object.assign(window, { metadataStats: stats });
     const read = File.prototype.arrayBuffer;
-    File.prototype.arrayBuffer = function () { stats.reads.push(this.name); return read.call(this); };
+    File.prototype.arrayBuffer = function () {
+      stats.reads.push(this.name);
+      const path = [...document.querySelectorAll('[data-testid="book-path"]')].find(el => el.textContent === this.name);
+      const bounds = path?.closest('[data-testid="book-card"]')?.getBoundingClientRect();
+      if (bounds && bounds.top >= innerHeight) stats.preloaded.push(this.name);
+      return read.call(this);
+    };
     const create = URL.createObjectURL;
     const revoke = URL.revokeObjectURL;
     URL.createObjectURL = blob => { const url = create(blob); stats.created.push(url); return url; };
     URL.revokeObjectURL = url => { stats.revoked.push(url); revoke(url); };
   });
   await page.goto('/');
-  const buffer = await makeEpub();
+  const buffer = await makeEpub({ authors: [] });
   await page.getByLabel('Выбрать EPUB').setInputFiles(Array.from({ length: 40 }, (_, i) => ({ name: `book-${i}.epub`, mimeType: 'application/epub+zip', buffer })));
   const first = page.getByTestId('book-card').first();
   const last = page.getByTestId('book-card').last();
@@ -121,9 +127,14 @@ test('loads cards only after visibility and releases cover URLs on hide, clear a
   const initial = await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads);
   expect(initial.length).toBeLessThan(40);
   expect(initial).not.toContain('book-39.epub');
+  await expect.poll(() => page.evaluate(() => (window as unknown as { metadataStats: { preloaded: string[] } }).metadataStats.preloaded.length)).toBeGreaterThan(0);
   await last.scrollIntoViewIfNeeded();
   await expect(last.getByRole('heading')).toHaveText('Настоящее название');
-  await expect(first.locator('img')).toHaveCount(0);
+  await expect(first.locator('img')).toHaveCount(1);
+  await first.scrollIntoViewIfNeeded();
+  await expect(first.locator('img')).toHaveJSProperty('naturalWidth', 1);
+  const readsOnReturn = await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads);
+  expect(readsOnReturn.filter(name => name === 'book-0.epub')).toHaveLength(1);
   await page.getByRole('button', { name: 'Закрыть view', exact: true }).click();
   await expect(page.getByTestId('library')).toHaveCount(0);
   const stats = await page.evaluate(() => (window as unknown as { metadataStats: { created: string[]; revoked: string[] } }).metadataStats);
@@ -132,6 +143,8 @@ test('loads cards only after visibility and releases cover URLs on hide, clear a
   await page.getByRole('button', { name: 'Открыть view', exact: true }).click();
   await page.getByRole('button', { name: 'Очистить список', exact: true }).click();
   await expect(page.getByTestId('book-card')).toHaveCount(0);
+  const cleared = await page.evaluate(() => (window as unknown as { metadataStats: { created: string[]; revoked: string[] } }).metadataStats);
+  expect([...cleared.revoked].sort()).toEqual([...cleared.created].sort());
   expect(errors).toEqual([]);
 });
 
@@ -157,5 +170,47 @@ test('a file read finishing after close cannot update the closed view', async ({
   await expect(page.getByTestId('library')).toHaveCount(0);
   await page.getByRole('button', { name: 'Открыть view', exact: true }).click();
   await expect(page.getByTestId('book-card').getByRole('heading')).toHaveText('Настоящее название');
+  expect(errors).toEqual([]);
+});
+
+
+test('bounds binary reads to two while scrolling and closing with pending native reads', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 375, height: 736 });
+  await page.addInitScript(() => {
+    const stats = { started: [] as string[], active: 0, peak: 0, release: [] as (() => void)[] };
+    Object.assign(window, { queueStats: stats });
+    const read = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = async function () {
+      stats.started.push(this.name);
+      stats.active++;
+      stats.peak = Math.max(stats.peak, stats.active);
+      const gate = new Promise<void>(resolve => { stats.release.push(resolve); });
+      try {
+        const data = await read.call(this);
+        await gate;
+        return data;
+      } finally { stats.active--; }
+    };
+  });
+  await page.goto('/');
+  const buffer = await makeEpub({ authors: [] });
+  await page.getByLabel('Выбрать EPUB').setInputFiles(Array.from({ length: 40 }, (_, i) => ({ name: `queued-${i}.epub`, mimeType: 'application/epub+zip', buffer })));
+  await expect.poll(() => page.evaluate(() => (window as unknown as { queueStats: { started: string[] } }).queueStats.started.length)).toBe(2);
+  await page.getByTestId('book-card').last().scrollIntoViewIfNeeded();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await page.evaluate(() => (window as unknown as { queueStats: { started: string[] } }).queueStats.started.length)).toBe(2);
+  await page.evaluate(() => (window as unknown as { queueStats: { release: (() => void)[] } }).queueStats.release.splice(0).forEach(release => release()));
+  await expect.poll(() => page.evaluate(() => (window as unknown as { queueStats: { started: string[] } }).queueStats.started.length)).toBe(4);
+  await page.getByRole('button', { name: 'Закрыть view', exact: true }).click();
+  await page.evaluate(() => (window as unknown as { queueStats: { release: (() => void)[] } }).queueStats.release.splice(0).forEach(release => release()));
+  await expect.poll(() => page.evaluate(() => (window as unknown as { queueStats: { active: number } }).queueStats.active)).toBe(0);
+  const result = await page.evaluate(() => {
+    const stats = (window as unknown as { queueStats: { peak: number; started: string[] } }).queueStats;
+    return { peak: stats.peak, count: stats.started.length };
+  });
+  expect(result).toEqual({ peak: 2, count: 4 });
+  await expect(page.getByTestId('library')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
