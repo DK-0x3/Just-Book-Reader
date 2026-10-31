@@ -6,12 +6,17 @@ import './styles.scss';
 import { LibraryService } from '../app/library-service';
 import { createObsidianVault } from './vault';
 import { readEpubMetadata } from '../infrastructure/epub/metadata';
+import { PersistentLibraryCache } from '../infrastructure/cache/library-cache';
+import { createObsidianCacheStorage } from './cache';
+import { LibraryWorkBudget } from '../app/library-work-budget';
 
 const VIEW_TYPE = 'just-book-reader-library';
 
 class GalleryView extends ItemView {
   private vue?: VueApp;
   private service?: LibraryService;
+
+  constructor(leaf: WorkspaceLeaf, private cache: PersistentLibraryCache, private budget: LibraryWorkBudget) { super(leaf); }
 
   getViewType(): string { return VIEW_TYPE; }
   getDisplayText(): string { return 'Just Book Reader'; }
@@ -20,7 +25,7 @@ class GalleryView extends ItemView {
   async onOpen(): Promise<void> {
     this.contentEl.empty();
     this.contentEl.addClass('jbr-view-content');
-    this.service = new LibraryService(createObsidianVault(this.app), readEpubMetadata);
+    this.service = new LibraryService(createObsidianVault(this.app), readEpubMetadata, this.cache, this.budget);
     this.vue = createApp(GalleryApp, { service: this.service });
     this.vue.use(createLocalization(moment.locale()));
     this.vue.mount(this.contentEl);
@@ -37,12 +42,16 @@ class GalleryView extends ItemView {
 }
 
 export default class JustBookReader extends Plugin {
+  private cache?: PersistentLibraryCache;
+  private budget = new LibraryWorkBudget();
   private galleryOpening?: Promise<void>;
   private localization?: Localization;
 
   async onload(): Promise<void> {
     const localization = this.localization = createLocalization(moment.locale());
-    this.registerView(VIEW_TYPE, leaf => new GalleryView(leaf));
+    const cache = this.cache = new PersistentLibraryCache(createObsidianCacheStorage(this.app.vault.adapter,
+      this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`));
+    this.registerView(VIEW_TYPE, leaf => new GalleryView(leaf, cache, this.budget));
     const open = () => {
       void this.openGallery().catch(error => {
         console.error('Just Book Reader: unable to open library', error);
@@ -78,6 +87,7 @@ export default class JustBookReader extends Plugin {
 
   onunload(): void {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
+    void this.cache?.flush();
     this.localization?.dispose();
     this.localization = undefined;
   }

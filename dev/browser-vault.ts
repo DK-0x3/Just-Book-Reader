@@ -2,6 +2,7 @@ import { isEpubPath, type BookFile, type BookVault, type VaultChange } from '../
 
 /** Selected files stay in memory. Reading stays local; there is no upload. */
 export class BrowserVault implements BookVault {
+  canPruneCache = false;
   private files = new Map<string, File>();
   private listeners = new Set<(change: VaultChange) => void>();
 
@@ -15,6 +16,7 @@ export class BrowserVault implements BookVault {
     if (!file || file.size !== book.size || file.lastModified !== book.mtime) throw new Error('file-changed');
     const data = await file.arrayBuffer();
     signal.throwIfAborted();
+    if (this.files.get(book.path) !== file) throw new Error('file-changed');
     return data;
   }
 
@@ -24,6 +26,7 @@ export class BrowserVault implements BookVault {
   }
 
   add(files: readonly File[]): void {
+    this.canPruneCache = true;
     for (const file of files) {
       if (!isEpubPath(file.name)) continue;
       this.files.set(file.name, file);
@@ -32,6 +35,7 @@ export class BrowserVault implements BookVault {
   }
 
   clear(): void {
+    this.canPruneCache = true;
     this.files.clear();
     for (const listener of this.listeners) listener({ type: 'reset' });
   }

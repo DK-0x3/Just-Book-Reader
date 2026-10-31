@@ -98,49 +98,49 @@ test('rejects unsafe, malformed and oversized XML and unsafe package paths', asy
   for (const entry of cases) expect(await parse(page, await makeEpub(entry.options))).toMatchObject({ error: entry.error });
 });
 
-test('preloads nearby cards, reuses cached covers on return and releases URLs on clear and close', async ({ page }) => {
+test('indexes all files once, lazily shows cached covers and reuses them across view close/reopen', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.setViewportSize({ width: 375, height: 736 });
   await page.addInitScript(() => {
-    const stats = { reads: [] as string[], created: [] as string[], revoked: [] as string[], preloaded: [] as string[] };
+    const stats = { reads: [] as string[], created: [] as string[], revoked: [] as string[] };
     Object.assign(window, { metadataStats: stats });
     const read = File.prototype.arrayBuffer;
-    File.prototype.arrayBuffer = function () {
-      stats.reads.push(this.name);
-      const path = [...document.querySelectorAll('[data-testid="book-path"]')].find(el => el.textContent === this.name);
-      const bounds = path?.closest('[data-testid="book-card"]')?.getBoundingClientRect();
-      if (bounds && bounds.top >= innerHeight) stats.preloaded.push(this.name);
-      return read.call(this);
-    };
+    File.prototype.arrayBuffer = function () { stats.reads.push(this.name); return read.call(this); };
     const create = URL.createObjectURL;
     const revoke = URL.revokeObjectURL;
     URL.createObjectURL = blob => { const url = create(blob); stats.created.push(url); return url; };
     URL.revokeObjectURL = url => { stats.revoked.push(url); revoke(url); };
   });
   await page.goto('/');
-  const buffer = await makeEpub({ authors: [] });
-  await page.getByLabel('Выбрать EPUB').setInputFiles(Array.from({ length: 40 }, (_, i) => ({ name: `book-${i}.epub`, mimeType: 'application/epub+zip', buffer })));
+  const files = await Promise.all(Array.from({ length: 40 }, async (_, i) => ({ name: `book-${i}.epub`, mimeType: 'application/epub+zip', buffer: await makeEpub({ title: `book-${i}`, authors: [] }) })));
+  await page.getByLabel('Выбрать EPUB').setInputFiles(files);
   const first = page.getByTestId('book-card').first();
   const last = page.getByTestId('book-card').last();
-  await expect(first.getByRole('heading')).toHaveText('Настоящее название');
-  const initial = await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads);
-  expect(initial.length).toBeLessThan(40);
-  expect(initial).not.toContain('book-39.epub');
-  await expect.poll(() => page.evaluate(() => (window as unknown as { metadataStats: { preloaded: string[] } }).metadataStats.preloaded.length)).toBeGreaterThan(0);
+  await expect(page.getByTestId('index-progress')).toHaveCount(0);
+  await expect(first.locator('img')).toHaveJSProperty('naturalWidth', 1);
+  await expect(last.locator('img')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads.length)).toBe(40);
+  // A card inside the preload margin should get a cached cover before reaching the viewport.
+  const target = await page.getByTestId('book-card').evaluateAll(cards => cards.findIndex(card => card.getBoundingClientRect().top > innerHeight + 180));
+  expect(target).toBeGreaterThan(0);
+  const nearby = page.getByTestId('book-card').nth(target);
+  await nearby.evaluate(card => scrollBy(0, card.getBoundingClientRect().top - innerHeight - 90));
+  await expect(nearby.locator('img')).toHaveJSProperty('naturalWidth', 1);
+  expect((await nearby.boundingBox())!.y).toBeGreaterThanOrEqual(736);
   await last.scrollIntoViewIfNeeded();
-  await expect(last.getByRole('heading')).toHaveText('Настоящее название');
-  await expect(first.locator('img')).toHaveCount(1);
+  await expect(last.locator('img')).toHaveJSProperty('naturalWidth', 1);
   await first.scrollIntoViewIfNeeded();
   await expect(first.locator('img')).toHaveJSProperty('naturalWidth', 1);
-  const readsOnReturn = await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads);
-  expect(readsOnReturn.filter(name => name === 'book-0.epub')).toHaveLength(1);
   await page.getByRole('button', { name: 'Закрыть view', exact: true }).click();
   await expect(page.getByTestId('library')).toHaveCount(0);
   const stats = await page.evaluate(() => (window as unknown as { metadataStats: { created: string[]; revoked: string[] } }).metadataStats);
   expect(stats.created.length).toBeGreaterThan(0);
+  expect(stats.created.length).toBeLessThan(40);
   expect([...stats.revoked].sort()).toEqual([...stats.created].sort());
   await page.getByRole('button', { name: 'Открыть view', exact: true }).click();
+  await expect(first.locator('img')).toHaveJSProperty('naturalWidth', 1);
+  expect(await page.evaluate(() => (window as unknown as { metadataStats: { reads: string[] } }).metadataStats.reads.length)).toBe(40);
   await page.getByRole('button', { name: 'Очистить список', exact: true }).click();
   await expect(page.getByTestId('book-card')).toHaveCount(0);
   const cleared = await page.evaluate(() => (window as unknown as { metadataStats: { created: string[]; revoked: string[] } }).metadataStats);

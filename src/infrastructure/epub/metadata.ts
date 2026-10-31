@@ -1,9 +1,8 @@
 import JSZip from 'jszip';
 import type { BookMetadata } from '../../domain/library';
-import { MAX_EPUB_BYTES } from '../../domain/epub-limits';
+import { MAX_EPUB_BYTES, MAX_EPUB_COVER_BYTES } from '../../domain/epub-limits';
 
 const MAX_XML_BYTES = 2 * 1024 * 1024;
-const MAX_COVER_BYTES = 8 * 1024 * 1024;
 
 export function resolveArchivePath(base: string, reference: string): string {
   return normalizeArchivePath(base, decodeURIComponent(reference.split(/[?#]/, 1)[0] || ''));
@@ -120,7 +119,7 @@ export async function readEpubMetadata(data: ArrayBuffer, signal: AbortSignal): 
   const href = cover?.getAttribute('href');
   if (!href) return result;
   try {
-    const bytes = await boundedEntry(zip, resolveArchivePath(packagePath, href), MAX_COVER_BYTES, signal);
+    const bytes = await boundedEntry(zip, resolveArchivePath(packagePath, href), MAX_EPUB_COVER_BYTES, signal);
     const mime = rasterMime(bytes);
     // Never insert EPUB markup into the gallery, even when its filename or MIME claims it is an image.
     if (mime) return { ...result, cover: new Blob([bytes.slice().buffer], { type: mime }) };

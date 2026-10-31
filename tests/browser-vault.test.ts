@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { BrowserVault } from '../dev/browser-vault';
 import { LibraryService } from '../src/app/library-service';
 import type { LibrarySnapshot } from '../src/domain/library';
+import { memoryCache } from './fixtures/cache';
 
 describe('browser catalog adapter', () => {
   it('filters extensions, uses filename/stat metadata and never reads file contents', async () => {
@@ -33,11 +34,12 @@ describe('browser catalog adapter', () => {
 
   it('keeps selected files across view service close/reopen and clears a live catalog', async () => {
     const vault = new BrowserVault();
-    const first = new LibraryService(vault, async () => ({}));
+    const cache = memoryCache();
+    const first = new LibraryService(vault, async () => ({}), cache);
     vault.add([new File([], 'First.epub')]);
     first.destroy();
     vault.add([new File([], 'WhileClosed.epub')]);
-    const second = new LibraryService(vault, async () => ({}));
+    const second = new LibraryService(vault, async () => ({}), cache);
     let snapshot: LibrarySnapshot = { books: [], scanning: false };
     second.subscribe(value => { snapshot = value; });
     await second.scan();
@@ -49,6 +51,17 @@ describe('browser catalog adapter', () => {
 });
 
 describe('browser binary access', () => {
+  it('rejects an old File replaced during its read even when name and stat match', async () => {
+    const vault = new BrowserVault();
+    const file = new File(['one'], 'book.epub', { lastModified: 1 });
+    vault.add([file]);
+    const book = (await vault.list())[0]!;
+    vi.spyOn(file, 'arrayBuffer').mockImplementation(async () => {
+      vault.add([new File(['two'], 'book.epub', { lastModified: 1 })]);
+      return new ArrayBuffer(3);
+    });
+    await expect(vault.read(book, new AbortController().signal)).rejects.toThrow('file-changed');
+  });
   it('reads only the requested file and rejects removed, changed and aborted files', async () => {
     const vault = new BrowserVault();
     const file = new File(['local bytes'], 'book.epub', { lastModified: 1 });

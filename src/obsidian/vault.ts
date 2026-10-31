@@ -18,6 +18,9 @@ export function createObsidianVault(app: App): BookVault {
       }
       const data = await app.vault.readBinary(file);
       signal.throwIfAborted();
+      if (app.vault.getAbstractFileByPath(book.path) !== file || file.stat.size !== book.size || file.stat.mtime !== book.mtime) {
+        throw new Error('file-changed');
+      }
       return data;
     },
     subscribe(listener: (change: VaultChange) => void) {

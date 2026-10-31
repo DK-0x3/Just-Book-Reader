@@ -5,11 +5,16 @@ import { createLocalization, resolveLocale } from '../src/i18n';
 import './styles.scss';
 import { LibraryService } from '../src/app/library-service';
 import { BrowserVault } from './browser-vault';
+import { createBrowserCacheStorage } from './cache';
+import { PersistentLibraryCache } from '../src/infrastructure/cache/library-cache';
+import { LibraryWorkBudget } from '../src/app/library-work-budget';
 
 const localization = createLocalization('ru');
 const { locale, t } = localization.global;
 const vault = new BrowserVault();
-const service = shallowRef<LibraryService | null>(new LibraryService(vault, readEpubMetadata));
+const cache = new PersistentLibraryCache(createBrowserCacheStorage());
+const budget = new LibraryWorkBudget();
+const service = shallowRef<LibraryService | null>(new LibraryService(vault, readEpubMetadata, cache, budget));
 const upload = ref<HTMLInputElement>();
 let viewId = 0;
 function toggleView(): void {
@@ -17,7 +22,7 @@ function toggleView(): void {
     service.value.destroy();
     service.value = null;
   } else {
-    service.value = new LibraryService(vault, readEpubMetadata);
+    service.value = new LibraryService(vault, readEpubMetadata, cache, budget);
     viewId++;
   }
 }
@@ -63,7 +68,7 @@ function dispose(): void {
   window.removeEventListener('pagehide', dispose);
   app.unmount();
   service.value?.destroy();
-  vault.clear();
+  void cache.flush();
 }
 window.addEventListener('pagehide', dispose, { once: true });
 if (import.meta.hot) import.meta.hot.dispose(dispose);

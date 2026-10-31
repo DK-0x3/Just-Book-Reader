@@ -36,4 +36,14 @@ describe('Obsidian binary adapter', () => {
     finish(new ArrayBuffer(4));
     await expect(reading).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('rejects bytes if the file changes while native IO is in progress', async () => {
+    const file = new TFile();
+    const vault = createObsidianVault({ vault: {
+      getAbstractFileByPath: () => file,
+      readBinary: async () => { file.stat.mtime = 2; return new ArrayBuffer(4); },
+    } } as unknown as App);
+    await expect(vault.read({ path: file.path, name: file.basename, size: 4, mtime: 1 }, new AbortController().signal))
+      .rejects.toThrow('file-changed');
+  });
 });

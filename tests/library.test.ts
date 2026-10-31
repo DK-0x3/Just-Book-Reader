@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { LibraryService } from '../src/app/library-service';
+import { memoryCache } from './fixtures/cache';
 import type { BookFile, BookVault, LibrarySnapshot, MetadataReader, VaultChange } from '../src/domain/library';
 
 const file = (path: string, mtime = 1, size = 10): BookFile => ({
@@ -23,7 +24,7 @@ function setup(initial: BookFile[] = [file('Books/Atlas.epub')], reader: Metadat
     list, read,
     subscribe(fn) { listener = fn; return stopVault; },
   };
-  const service = new LibraryService(vault, reader);
+  const service = new LibraryService(vault, reader, memoryCache());
   let snapshot: LibrarySnapshot = { books: [], scanning: false };
   const notify = vi.fn((value: LibrarySnapshot) => { snapshot = value; });
   const stopUI = service.subscribe(notify);
@@ -41,7 +42,7 @@ describe('library catalog', () => {
     const pending = deferred<readonly BookFile[]>();
     s.list.mockReturnValueOnce(pending.promise);
     const scan = s.service.scan();
-    expect(s.snapshot()).toEqual({ books: [], scanning: true, error: undefined });
+    expect(s.snapshot()).toMatchObject({ books: [], scanning: true, indexing: { completed: 0, total: 0, failed: 0 } });
     pending.resolve([]);
     await scan;
     expect(s.snapshot().scanning).toBe(false);
@@ -159,8 +160,8 @@ describe('library catalog', () => {
   });
 });
 
-describe('lazy metadata lifecycle', () => {
-  it('reads only visible cards and retains the filename fallback', async () => {
+describe('metadata lifecycle', () => {
+  it('prioritizes visible cards, then indexes hidden books and retains the filename fallback', async () => {
     const pending = deferred<ArrayBuffer>();
     const reader = vi.fn(async () => ({ author: 'Author' }));
     const s = setup([file('One.epub'), file('Two.epub'), file('Hidden.epub')], reader);
@@ -172,7 +173,8 @@ describe('lazy metadata lifecycle', () => {
     expect(s.read).toHaveBeenCalledTimes(2);
     pending.resolve(new ArrayBuffer(0));
     await vi.waitFor(() => expect(s.snapshot().books[1]?.metadataStatus).toBe('ready'));
-    expect(s.read.mock.calls.map(([book]) => book.path)).toEqual(['One.epub', 'Two.epub']);
+    await vi.waitFor(() => expect(s.snapshot().indexing?.completed).toBe(3), { interval: 1 });
+    expect(s.read.mock.calls.map(([book]) => book.path)).toEqual(['One.epub', 'Two.epub', 'Hidden.epub']);
     expect(s.snapshot().books[0]).toMatchObject({ title: 'One', author: 'Author' });
     s.service.destroy();
   });
@@ -235,15 +237,14 @@ describe('lazy metadata lifecycle', () => {
     revoke.mockRestore();
   });
 
-  it.each(['hide', 'rename', 'delete', 'destroy'] as const)('cancels a pending read on %s without parsing its late result', async action => {
+  it.each(['rename', 'delete', 'destroy'] as const)('cancels a pending read on %s without parsing its late result', async action => {
     const pending = deferred<ArrayBuffer>();
-    const reader = vi.fn(async () => ({ title: 'Late' }));
+    const reader = vi.fn<MetadataReader>(async () => ({ title: 'Late' }));
     const s = setup([file('Book.epub')], reader);
     s.read.mockReturnValueOnce(pending.promise);
     await s.service.scan();
     s.service.setVisible('Book.epub', true);
     const abort = s.read.mock.calls[0]![1];
-    if (action === 'hide') s.service.setVisible('Book.epub', false);
     if (action === 'rename') s.change({ type: 'rename', oldPath: 'Book.epub', file: file('Renamed.epub') });
     if (action === 'delete') s.change({ type: 'remove', path: 'Book.epub' });
     if (action === 'destroy') s.service.destroy();
@@ -251,7 +252,7 @@ describe('lazy metadata lifecycle', () => {
     const before = s.notify.mock.calls.length;
     pending.resolve(new ArrayBuffer(0));
     await new Promise(resolve => setTimeout(resolve, 0));
-    expect(reader).not.toHaveBeenCalled();
+    expect(reader.mock.calls.some(([, signal]) => signal === abort)).toBe(false);
     if (action === 'destroy') expect(s.notify).toHaveBeenCalledTimes(before);
     s.service.destroy();
   });
@@ -259,7 +260,7 @@ describe('lazy metadata lifecycle', () => {
 
 describe('metadata queue and cover cache', () => {
   it('runs two jobs, deduplicates queued paths and starts the next after a slot settles', async () => {
-    const reads = [deferred<ArrayBuffer>(), deferred<ArrayBuffer>(), deferred<ArrayBuffer>()];
+    const reads = [deferred<ArrayBuffer>(), deferred<ArrayBuffer>(), deferred<ArrayBuffer>(), deferred<ArrayBuffer>()];
     const s = setup([file('One.epub'), file('Two.epub'), file('Three.epub'), file('Hidden.epub')]);
     s.read.mockImplementation(() => reads[s.read.mock.calls.length - 1]!.promise);
     await s.service.scan();
@@ -267,35 +268,32 @@ describe('metadata queue and cover cache', () => {
     expect(s.read.mock.calls.map(([book]) => book.path)).toEqual(['One.epub', 'Two.epub']);
     expect(s.snapshot().books[2]?.metadataStatus).toBe('idle');
     reads[0]!.resolve(new ArrayBuffer(0));
-    await vi.waitFor(() => expect(s.read).toHaveBeenCalledTimes(3), { interval: 1 });
+    await vi.waitFor(() => expect(s.read.mock.calls.length).toBeGreaterThanOrEqual(3), { interval: 1 });
     expect(s.read.mock.calls[2]![0].path).toBe('Three.epub');
     expect(s.snapshot().books[1]?.metadataStatus).toBe('loading');
     reads[1]!.resolve(new ArrayBuffer(0));
     reads[2]!.resolve(new ArrayBuffer(0));
-    await vi.waitFor(() => expect(s.snapshot().books[2]?.metadataStatus).toBe('ready'), { interval: 1 });
-    expect(s.read).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(s.read).toHaveBeenCalledTimes(4), { interval: 1 });
+    reads[3]!.resolve(new ArrayBuffer(0));
+    await vi.waitFor(() => expect(s.snapshot().indexing?.completed).toBe(4), { interval: 1 });
     s.service.destroy();
   });
 
-  it('does not free cancelled read slots early and removes hidden entries from the queue', async () => {
+  it('finishes started reads after hide and prioritizes the next visible book', async () => {
     const reads = [deferred<ArrayBuffer>(), deferred<ArrayBuffer>()];
     const s = setup([file('One.epub'), file('Two.epub'), file('Three.epub'), file('Four.epub')]);
     s.read.mockReturnValueOnce(reads[0]!.promise).mockReturnValueOnce(reads[1]!.promise);
     await s.service.scan();
     for (const path of ['One.epub', 'Two.epub', 'Three.epub', 'Four.epub']) s.service.setVisible(path, true);
-    s.service.setVisible('One.epub', false);
-    s.service.setVisible('Two.epub', false);
-    s.service.setVisible('Three.epub', false);
-    expect(s.read.mock.calls[0]![1].aborted).toBe(true);
-    expect(s.read.mock.calls[1]![1].aborted).toBe(true);
+    for (const path of ['One.epub', 'Two.epub', 'Three.epub']) s.service.setVisible(path, false);
+    expect(s.read.mock.calls.every(([, signal]) => !signal.aborted)).toBe(true);
     expect(s.read).toHaveBeenCalledTimes(2);
     reads[0]!.resolve(new ArrayBuffer(0));
-    await vi.waitFor(() => expect(s.read).toHaveBeenCalledTimes(3), { interval: 1 });
+    await vi.waitFor(() => expect(s.read.mock.calls.length).toBeGreaterThanOrEqual(3), { interval: 1 });
     expect(s.read.mock.calls[2]![0].path).toBe('Four.epub');
-    expect(s.snapshot().books[2]?.metadataStatus).toBe('idle');
     reads[1]!.resolve(new ArrayBuffer(0));
-    await vi.waitFor(() => expect(s.snapshot().books[3]?.metadataStatus).toBe('ready'), { interval: 1 });
-    expect(s.read).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(s.snapshot().indexing?.completed).toBe(4), { interval: 1 });
+    expect(new Set(s.read.mock.calls.map(([book]) => book.path)).size).toBe(4);
     s.service.destroy();
   });
 
@@ -314,10 +312,9 @@ describe('metadata queue and cover cache', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(s.snapshot().books[0]).toMatchObject({ title: 'Book', metadataStatus: 'loading', mtime: 2 });
     s.service.setVisible('Book.epub', false);
-    expect(reader.mock.calls[1]![1].aborted).toBe(true);
-    fresh.resolve({ title: 'Also cancelled' });
-    await new Promise(resolve => setTimeout(resolve, 0));
-    expect(s.snapshot().books[0]).toMatchObject({ title: 'Book', metadataStatus: 'idle' });
+    expect(reader.mock.calls[1]![1].aborted).toBe(false);
+    fresh.resolve({ title: 'Replacement title' });
+    await vi.waitFor(() => expect(s.snapshot().books[0]).toMatchObject({ title: 'Replacement title', metadataStatus: 'ready' }), { interval: 1 });
     s.service.destroy();
   });
 
@@ -348,7 +345,7 @@ describe('metadata queue and cover cache', () => {
       return url;
     });
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const s = setup(Array.from({ length: 65 }, (_, i) => file(`${i}.epub`)), async () => ({ title: 'Metadata title', author: 'Author', cover: new Blob(['x']) }));
+    const s = setup(Array.from({ length: 65 }, (_, i) => file(`${i}.epub`)), async () => ({ title: 'Metadata title', author: 'Author', cover: new Blob(['x'], { type: 'image/png' }) }));
     await s.service.scan();
     for (let i = 0; i < 64; i++) {
       const path = `${i}.epub`;
@@ -361,15 +358,15 @@ describe('metadata queue and cover cache', () => {
     // Touch the oldest entry, making 1.epub the least recently used one.
     s.service.setVisible('0.epub', true);
     s.service.setVisible('0.epub', false);
-    expect(s.read).toHaveBeenCalledTimes(64);
+    expect(s.read.mock.calls.length).toBeLessThanOrEqual(65);
     s.service.setVisible('64.epub', true);
     await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(65), { interval: 1 });
     expect(revoke.mock.calls).toEqual([[urls[1]]]);
     expect(s.snapshot().books[0]?.coverUrl).toBe(urls[0]);
-    expect(s.snapshot().books[1]).toMatchObject({ title: 'Metadata title', author: 'Author', coverUrl: undefined, metadataStatus: 'idle' });
+    expect(s.snapshot().books[1]).toMatchObject({ title: 'Metadata title', author: 'Author', coverUrl: undefined, metadataStatus: 'ready' });
     s.service.setVisible('1.epub', true);
     await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(66), { interval: 1 });
-    expect(s.read).toHaveBeenCalledTimes(66);
+    expect(s.read).toHaveBeenCalledTimes(65);
     expect(revoke.mock.calls[1]).toEqual([urls[2]]);
     s.service.destroy();
     expect(revoke.mock.calls.map(([url]) => url).sort()).toEqual([...urls].sort());
@@ -378,7 +375,7 @@ describe('metadata queue and cover cache', () => {
   });
 
   it('trims hidden covers over 24 MiB while protecting all visible covers', async () => {
-    const cover = new Blob([new Uint8Array(8 * 1024 * 1024)]);
+    const cover = new Blob([new Uint8Array(8 * 1024 * 1024)], { type: 'image/png' });
     let sequence = 0;
     const create = vi.spyOn(URL, 'createObjectURL').mockImplementation(() => `blob:large-${sequence++}`);
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
@@ -394,7 +391,7 @@ describe('metadata queue and cover cache', () => {
     s.service.setVisible('D.epub', false);
     expect(revoke.mock.calls).toEqual([[lastUrl]]);
     expect(s.snapshot().books.slice(0, 3).every(book => book.coverUrl)).toBe(true);
-    expect(s.snapshot().books[3]).toMatchObject({ coverUrl: undefined, metadataStatus: 'idle' });
+    expect(s.snapshot().books[3]).toMatchObject({ coverUrl: undefined, metadataStatus: 'ready' });
     s.service.setVisible('A.epub', false);
     expect(revoke).toHaveBeenCalledTimes(1); // Exactly 24 MiB is retained.
     s.service.destroy();
@@ -406,7 +403,7 @@ describe('metadata queue and cover cache', () => {
   it.each(['rename', 'delete', 'scan removal', 'folder reset'] as const)('invalidates a cached URL on %s', async action => {
     const create = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:cached');
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-    const s = setup([file('Book.epub')], async () => ({ cover: new Blob(['x']) }));
+    const s = setup([file('Book.epub')], async () => ({ cover: new Blob(['x'], { type: 'image/png' }) }));
     await s.service.scan();
     s.service.setVisible('Book.epub', true);
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce(), { interval: 1 });
@@ -424,5 +421,37 @@ describe('metadata queue and cover cache', () => {
     expect(revoke).toHaveBeenCalledOnce();
     create.mockRestore();
     revoke.mockRestore();
+  });
+});
+
+describe('metadata errors and explicit retry', () => {
+  it('reports a safe error code and retries through the existing queue, including an offscreen details request', async () => {
+    const reader = vi.fn<MetadataReader>().mockRejectedValueOnce(new Error('unsafe XML with private details')).mockResolvedValue({ title: 'Recovered' });
+    const s = setup([file('Book.epub')], reader);
+    await s.service.scan();
+    s.service.setVisible('Book.epub', true);
+    await vi.waitFor(() => expect(s.snapshot().books[0]?.metadataError).toBe('invalid'), { interval: 1 });
+    expect(JSON.stringify(s.snapshot())).not.toContain('private details');
+    s.service.setVisible('Book.epub', false);
+    s.service.retryMetadata('Book.epub');
+    s.service.retryMetadata('Book.epub');
+    await vi.waitFor(() => expect(s.snapshot().books[0]?.title).toBe('Recovered'), { interval: 1 });
+    expect(s.read).toHaveBeenCalledTimes(2);
+    expect(s.snapshot().books[0]?.metadataError).toBeUndefined();
+    s.service.destroy();
+    s.service.retryMetadata('Book.epub');
+    expect(s.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('distinguishes the file size limit and keeps retry within the same safety checks', async () => {
+    const s = setup([file('Huge.epub', 1, 128 * 1024 * 1024 + 1)]);
+    await s.service.scan();
+    s.service.setVisible('Huge.epub', true);
+    expect(s.snapshot().books[0]?.metadataError).toBe('too-large');
+    await new Promise(resolve => setTimeout(resolve, 0));
+    s.service.retryMetadata('Huge.epub');
+    await vi.waitFor(() => expect(s.snapshot().books[0]?.metadataError).toBe('too-large'), { interval: 1 });
+    expect(s.read).not.toHaveBeenCalled();
+    s.service.destroy();
   });
 });
