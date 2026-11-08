@@ -28,8 +28,12 @@ export function createObsidianVault(app: App): BookVault {
         if (isEpubPath(file.path)) listener({ type: 'upsert', file: describe(file) });
       };
       const refs = [
-        app.vault.on('create', file => { if (file instanceof TFile) changed(file); }),
-        app.vault.on('modify', file => { if (file instanceof TFile) changed(file); }),
+        app.vault.on('create', file => {
+          if (file instanceof TFile) changed(file);
+        }),
+        app.vault.on('modify', file => {
+          if (file instanceof TFile) changed(file);
+        }),
         app.vault.on('delete', file => {
           if (file instanceof TFile) listener({ type: 'remove', path: file.path });
           else listener({ type: 'reset' });
@@ -40,7 +44,9 @@ export function createObsidianVault(app: App): BookVault {
           else listener({ type: 'remove', path: oldPath });
         }),
       ];
-      return () => { for (const ref of refs) app.vault.offref(ref); };
+      return () => {
+        for (const ref of refs) app.vault.offref(ref);
+      };
     },
   };
 }

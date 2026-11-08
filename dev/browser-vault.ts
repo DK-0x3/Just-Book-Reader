@@ -1,6 +1,6 @@
 import { isEpubPath, type BookFile, type BookVault, type VaultChange } from '../src/domain/library';
 
-/** Selected files stay in memory. Reading stays local; there is no upload. */
+/** Selected files outlive individual views. */
 export class BrowserVault implements BookVault {
   canPruneCache = false;
   private files = new Map<string, File>();
@@ -22,7 +22,9 @@ export class BrowserVault implements BookVault {
 
   subscribe(listener: (change: VaultChange) => void): () => void {
     this.listeners.add(listener);
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   add(files: readonly File[]): void {

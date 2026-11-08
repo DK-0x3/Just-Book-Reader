@@ -26,14 +26,30 @@ export interface LibrarySnapshot {
   readonly scanning: boolean;
   readonly error?: 'vault';
   readonly cacheError?: boolean;
-  readonly indexing?: { readonly completed: number; readonly total: number; readonly failed: number };
+  readonly indexing?: {
+    readonly completed: number;
+    readonly total: number;
+    readonly failed: number;
+  };
 }
 
 export type VaultChange =
-  | { type: 'reset' }
-  | { type: 'upsert'; file: BookFile }
-  | { type: 'remove'; path: string }
-  | { type: 'rename'; oldPath: string; file: BookFile };
+  | {
+    type: 'reset';
+  }
+  | {
+    type: 'upsert';
+    file: BookFile;
+  }
+  | {
+    type: 'remove';
+    path: string;
+  }
+  | {
+    type: 'rename';
+    oldPath: string;
+    file: BookFile;
+  };
 
 /** Host-specific file access; metadata parsing belongs to a separate reader. */
 export interface BookVault {
@@ -61,5 +77,5 @@ export function filterBooks(books: readonly Book[], query: string, sort?: BookSo
   const filtered = books.filter(book => normalizeBookText(`${book.title} ${book.author || ''}`).includes(needle));
   if (!sort) return filtered;
   return filtered.sort((a, b) => bookCollator.compare(normalizeBookText(a[sort] || ''), normalizeBookText(b[sort] || ''))
-      || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+    || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 }

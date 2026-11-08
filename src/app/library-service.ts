@@ -1,4 +1,12 @@
-import type { Book, BookFile, BookMetadata, BookVault, LibrarySnapshot, MetadataReader, VaultChange } from '../domain/library';
+import type {
+  Book,
+  BookFile,
+  BookMetadata,
+  BookVault,
+  LibrarySnapshot,
+  MetadataReader,
+  VaultChange,
+} from '../domain/library';
 import type { LibraryCache } from '../domain/library-cache';
 import { sameBookFile } from '../domain/library-cache';
 import { MAX_EPUB_BYTES } from '../domain/epub-limits';
@@ -8,7 +16,10 @@ const MAX_CACHED_COVERS = 64;
 const MAX_CACHED_COVER_BYTES = 24 * 1024 * 1024;
 const BACKGROUND_YIELD_MS = 0;
 
-interface Job { controller: AbortController; lease: WorkLease }
+interface Job {
+  controller: AbortController;
+  lease: WorkLease;
+}
 
 /** One view owns live records and URLs; cache and IO budget belong to the host. */
 export class LibraryService {
@@ -29,7 +40,10 @@ export class LibraryService {
   private explicitRetries = new Set<string>();
   private jobs = new Map<string, Job>();
   private backgroundTimer?: ReturnType<typeof setTimeout>;
-  private covers = new Map<string, { url: string; size: number }>();
+  private covers = new Map<string, {
+    url: string;
+    size: number;
+  }>();
   private coverBytes = 0;
 
   constructor(private vault: BookVault, private readMetadata: MetadataReader, private cache: LibraryCache,
@@ -42,7 +56,9 @@ export class LibraryService {
     if (this.destroyed) return () => {};
     this.listeners.add(listener);
     listener(this.snapshot());
-    return () => { this.listeners.delete(listener); };
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
 
   async scan(): Promise<void> {
@@ -57,7 +73,10 @@ export class LibraryService {
       if (this.destroyed || generation !== this.scanGeneration) return;
       this.cacheReady = true;
       // File events already updated the live catalog; do not replace them with an older listing.
-      if (changes !== this.changeGeneration) { await this.scan(); return; }
+      if (changes !== this.changeGeneration) {
+        await this.scan();
+        return;
+      }
       const found = new Set(files.map(file => file.path));
       for (const path of this.records.keys()) if (!found.has(path)) this.remove(path);
       for (const file of files) this.upsert(file);
@@ -84,7 +103,10 @@ export class LibraryService {
       this.visible.add(path);
       this.jobs.get(path)?.lease.promote();
       const cover = this.covers.get(path);
-      if (cover) { this.covers.delete(path); this.covers.set(path, cover); }
+      if (cover) {
+        this.covers.delete(path);
+        this.covers.set(path, cover);
+      }
       this.enqueue(path);
     } else {
       this.visible.delete(path);
@@ -129,8 +151,10 @@ export class LibraryService {
     const books = [...this.records.values()];
     return {
       books, scanning: this.scanning, error: this.scanError, cacheError: this.cache.failed || undefined,
-      indexing: { completed: this.indexed.size, total: books.length,
-        failed: books.filter(book => !this.indexed.has(book.path) && book.metadataStatus === 'error').length },
+      indexing: {
+        completed: this.indexed.size, total: books.length,
+        failed: books.filter(book => !this.indexed.has(book.path) && book.metadataStatus === 'error').length
+      },
     };
   }
 
@@ -141,7 +165,10 @@ export class LibraryService {
   private onChange(change: VaultChange): void {
     if (this.destroyed) return;
     this.changeGeneration++;
-    if (change.type === 'reset') { void this.scan(); return; }
+    if (change.type === 'reset') {
+      void this.scan();
+      return;
+    }
     if (change.type === 'remove') this.remove(change.path);
     else {
       if (change.type === 'rename') this.remove(change.oldPath);
@@ -224,7 +251,10 @@ export class LibraryService {
       if (!next && allowBackground) next = this.reserve(this.queue, true);
       if (!next) {
         if (!allowBackground && this.queue.size) {
-          this.backgroundTimer ??= setTimeout(() => { this.backgroundTimer = undefined; this.pump(true); }, BACKGROUND_YIELD_MS);
+          this.backgroundTimer ??= setTimeout(() => {
+            this.backgroundTimer = undefined;
+            this.pump(true);
+          }, BACKGROUND_YIELD_MS);
         }
         return;
       }
@@ -250,10 +280,17 @@ export class LibraryService {
     }
   }
 
-  private reserve(paths: Iterable<string>, background: boolean): { path: string; book: Book; lease: WorkLease } | undefined {
+  private reserve(paths: Iterable<string>, background: boolean): {
+    path: string;
+    book: Book;
+    lease: WorkLease;
+  } | undefined {
     for (const path of paths) {
       if (!this.queue.has(path) || this.jobs.has(path)) continue;
-      if (!this.needsWork(path)) { this.queue.delete(path); continue; }
+      if (!this.needsWork(path)) {
+        this.queue.delete(path);
+        continue;
+      }
       if (background && (this.visible.has(path) || this.explicitRetries.has(path))) continue;
       const book = this.records.get(path);
       if (!book) continue;
@@ -306,8 +343,10 @@ export class LibraryService {
       if (!current()) return;
       const book = this.records.get(loading.path) ?? loading;
       const metadataError = error instanceof Error && error.message === 'too-large' ? 'too-large' : 'invalid';
-      this.records.set(loading.path, { ...book, metadataStatus: signal.aborted ? (this.indexed.has(loading.path) ? 'ready' : 'idle') : 'error',
-        metadataError: signal.aborted ? undefined : metadataError });
+      this.records.set(loading.path, {
+        ...book, metadataStatus: signal.aborted ? (this.indexed.has(loading.path) ? 'ready' : 'idle') : 'error',
+        metadataError: signal.aborted ? undefined : metadataError
+      });
     }
     this.emit();
   }

@@ -8,15 +8,21 @@ import { BrowserVault } from './browser-vault';
 import { createBrowserCacheStorage } from './cache';
 import { PersistentLibraryCache } from '../src/infrastructure/cache/library-cache';
 import { LibraryWorkBudget } from '../src/app/library-work-budget';
+import { PreferencesService } from '../src/app/preferences-service';
+import { createBrowserPreferencesStorage } from './preferences';
 
 const localization = createLocalization('ru');
 const { locale, t } = localization.global;
 const vault = new BrowserVault();
 const cache = new PersistentLibraryCache(createBrowserCacheStorage());
 const budget = new LibraryWorkBudget();
+const preferences = new PreferencesService(createBrowserPreferencesStorage(),
+  new URLSearchParams(window.location.search).get('device') === 'mobile' ? 'mobile' : 'desktop');
+void preferences.load();
 const service = shallowRef<LibraryService | null>(new LibraryService(vault, readEpubMetadata, cache, budget));
 const upload = ref<HTMLInputElement>();
 let viewId = 0;
+
 function toggleView(): void {
   if (service.value) {
     service.value.destroy();
@@ -26,6 +32,7 @@ function toggleView(): void {
     viewId++;
   }
 }
+
 const app = createApp({
   setup() {
     return () => h('div', { class: 'dev-shell' }, [
@@ -54,7 +61,7 @@ const app = createApp({
         h('button', { onClick: toggleView },
           t(service.value ? 'development.closeView' : 'development.openView')),
       ]),
-      service.value ? h(GalleryApp, { key: viewId, service: service.value }) : null,
+      service.value ? h(GalleryApp, { key: viewId, service: service.value, preferences }) : null,
     ]);
   },
 });
@@ -62,6 +69,7 @@ app.use(localization);
 app.mount('#app');
 
 let disposed = false;
+
 function dispose(): void {
   if (disposed) return;
   disposed = true;
@@ -69,6 +77,8 @@ function dispose(): void {
   app.unmount();
   service.value?.destroy();
   void cache.flush();
+  preferences.dispose();
 }
+
 window.addEventListener('pagehide', dispose, { once: true });
 if (import.meta.hot) import.meta.hot.dispose(dispose);

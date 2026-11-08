@@ -21,6 +21,7 @@ export interface CacheStorage {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+
 function validEntry(value: unknown): value is CachedBook {
   if (!isRecord(value) || typeof value.path !== 'string' || !value.path || typeof value.name !== 'string'
     || typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size < 0
@@ -126,13 +127,19 @@ export class PersistentLibraryCache implements LibraryCache {
         const bytes = await metadata.cover.arrayBuffer();
         if (signal.aborted) return;
         await this.storage.writeCover(key, bytes);
-        if (signal.aborted) { this.garbage.add(key); this.changed(); return; }
+        if (signal.aborted) {
+          this.garbage.add(key);
+          this.changed();
+          return;
+        }
         cover = { key, size: bytes.byteLength, type: metadata.cover.type, used: Date.now() };
       }
       const previous = this.entries.get(file.path);
       if (previous?.cover) this.garbage.add(previous.cover.key);
-      this.entries.set(file.path, { path: file.path, name: file.name, size: file.size, mtime: file.mtime,
-        title: metadata.title, author: metadata.author, hasCover: !!metadata.cover, cover });
+      this.entries.set(file.path, {
+        path: file.path, name: file.name, size: file.size, mtime: file.mtime,
+        title: metadata.title, author: metadata.author, hasCover: !!metadata.cover, cover
+      });
       this.trackCover(file.path, cover);
       this.trim();
       this.changed();
@@ -152,7 +159,9 @@ export class PersistentLibraryCache implements LibraryCache {
 
   async remove(path: string): Promise<void> {
     await this.open();
-    await this.run(async () => { this.forget(path); });
+    await this.run(async () => {
+      this.forget(path);
+    });
   }
 
   private forget(path: string): void {
@@ -168,7 +177,10 @@ export class PersistentLibraryCache implements LibraryCache {
     const previous = this.coverOrder.get(path);
     if (previous) this.coverBytes -= previous.size;
     this.coverOrder.delete(path);
-    if (cover) { this.coverOrder.set(path, cover); this.coverBytes += cover.size; }
+    if (cover) {
+      this.coverOrder.set(path, cover);
+      this.coverBytes += cover.size;
+    }
   }
 
   private trim(): void {
@@ -184,7 +196,10 @@ export class PersistentLibraryCache implements LibraryCache {
 
   private changed(): void {
     this.dirty = true;
-    if (!this.timer && !this.failed) this.timer = setTimeout(() => { this.timer = undefined; void this.flush(); }, FLUSH_DELAY_MS);
+    if (!this.timer && !this.failed) this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.flush();
+    }, FLUSH_DELAY_MS);
   }
 
   async flush(): Promise<void> {
@@ -206,7 +221,9 @@ export class PersistentLibraryCache implements LibraryCache {
   }
 
   private run(task: () => Promise<void>): Promise<void> {
-    this.work = this.work.then(task).catch(() => { this.failed = true; });
+    this.work = this.work.then(task).catch(() => {
+      this.failed = true;
+    });
     return this.work;
   }
 }

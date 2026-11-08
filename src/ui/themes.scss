@@ -1,0 +1,94 @@
+.jbr-gallery {
+  --jbr-background: var(--background-primary, #1e1e22);
+  --jbr-surface: var(--background-secondary, #25252b);
+  --jbr-hover: var(--background-modifier-hover, #303039);
+  --jbr-text: var(--text-normal, #eeeef3);
+  --jbr-muted: var(--text-muted, #aaaab7);
+  --jbr-border: var(--background-modifier-border, #393940);
+  --jbr-accent: var(--interactive-accent, #b4bcff);
+  --jbr-focus: var(--interactive-accent, #b4bcff);
+  --jbr-selected: var(--background-modifier-hover, #303039);
+  --jbr-popup-shadow: 0 16px 48px rgb(0 0 0 / 20%);
+  --jbr-card-shadow: 0 10px 24px rgb(0 0 0 / 12%);
+  --jbr-card-transform: translateY(-2px);
+  --jbr-duration: 140ms;
+  color-scheme: inherit;
+
+  &[data-theme='dark'] {
+    --jbr-background: #191c24;
+    --jbr-surface: #222631;
+    --jbr-hover: #2b3140;
+    --jbr-text: #f0f2f8;
+    --jbr-muted: #b0b8ca;
+    --jbr-border: #424a5e;
+    --jbr-accent: #b4bcff;
+    --jbr-focus: #b4bcff;
+    --jbr-selected: #343c58;
+    color-scheme: dark;
+  }
+
+  &[data-theme='light'] {
+    --jbr-background: #f6f7fb;
+    --jbr-surface: #ffffff;
+    --jbr-hover: #eeeff7;
+    --jbr-text: #252b3a;
+    --jbr-muted: #606a7d;
+    --jbr-border: #cdd3e0;
+    --jbr-accent: #5058b7;
+    --jbr-focus: #5058b7;
+    --jbr-selected: #e7e9fa;
+    --jbr-popup-shadow: 0 16px 48px rgb(30 40 70 / 14%);
+    color-scheme: light;
+  }
+
+  &[data-theme='sepia'] {
+    --jbr-background: #f4eddf;
+    --jbr-surface: #fcf7ed;
+    --jbr-hover: #eee2cd;
+    --jbr-text: #463a2c;
+    --jbr-muted: #6b5a46;
+    --jbr-border: #c7b89e;
+    --jbr-accent: #80542c;
+    --jbr-focus: #80542c;
+    --jbr-selected: #e9dcc4;
+    --jbr-popup-shadow: 0 16px 48px rgb(75 55 28 / 16%);
+    color-scheme: light;
+  }
+
+  &[data-theme='eink'] {
+    --jbr-background: #ffffff;
+    --jbr-surface: #ffffff;
+    --jbr-hover: #f0f0f0;
+    --jbr-text: #000000;
+    --jbr-muted: #333333;
+    --jbr-border: #000000;
+    --jbr-accent: #000000;
+    --jbr-focus: #000000;
+    --jbr-selected: #e8e8e8;
+    --jbr-popup-shadow: none;
+    --jbr-card-shadow: none;
+    --jbr-card-transform: none;
+    --jbr-duration: 0ms;
+    color-scheme: light;
+  }
+
+  &[data-theme='eink'], &[data-theme='eink'] * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+    box-shadow: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jbr-gallery {
+    --jbr-card-transform: none;
+    --jbr-duration: 0ms;
+
+    &, * {
+      animation: none !important;
+      transition: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { ItemView, Notice, Plugin, moment, type WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, Platform, Plugin, moment, type WorkspaceLeaf } from 'obsidian';
 import { createApp, type App as VueApp } from 'vue';
 import GalleryApp from '../ui/GalleryApp.vue';
 import { createLocalization, type Localization } from '../i18n';
@@ -9,6 +9,8 @@ import { readEpubMetadata } from '../infrastructure/epub/metadata';
 import { PersistentLibraryCache } from '../infrastructure/cache/library-cache';
 import { createObsidianCacheStorage } from './cache';
 import { LibraryWorkBudget } from '../app/library-work-budget';
+import { PreferencesService } from '../app/preferences-service';
+import { createObsidianPreferencesStorage } from './preferences';
 
 const VIEW_TYPE = 'just-book-reader-library';
 
@@ -16,24 +18,35 @@ class GalleryView extends ItemView {
   private vue?: VueApp;
   private service?: LibraryService;
 
-  constructor(leaf: WorkspaceLeaf, private cache: PersistentLibraryCache, private budget: LibraryWorkBudget) { super(leaf); }
+  constructor(leaf: WorkspaceLeaf, private cache: PersistentLibraryCache, private budget: LibraryWorkBudget,
+    private preferences: PreferencesService) {
+    super(leaf);
+  }
 
-  getViewType(): string { return VIEW_TYPE; }
-  getDisplayText(): string { return 'Just Book Reader'; }
-  getIcon(): string { return 'book-open'; }
+  getViewType(): string {
+    return VIEW_TYPE;
+  }
+
+getDisplayText(): string {
+    return 'Just Book Reader';
+  }
+
+getIcon(): string {
+    return 'book-open';
+  }
 
   async onOpen(): Promise<void> {
     this.contentEl.empty();
     this.contentEl.addClass('jbr-view-content');
     this.service = new LibraryService(createObsidianVault(this.app), readEpubMetadata, this.cache, this.budget);
-    this.vue = createApp(GalleryApp, { service: this.service });
+    this.vue = createApp(GalleryApp, { service: this.service, preferences: this.preferences });
     this.vue.use(createLocalization(moment.locale()));
     this.vue.mount(this.contentEl);
   }
 
   async onClose(): Promise<void> {
-    this.vue?.unmount();
     this.service?.destroy();
+    this.vue?.unmount();
     this.vue = undefined;
     this.service = undefined;
     this.contentEl.removeClass('jbr-view-content');
@@ -46,12 +59,16 @@ export default class JustBookReader extends Plugin {
   private budget = new LibraryWorkBudget();
   private galleryOpening?: Promise<void>;
   private localization?: Localization;
+  private preferences?: PreferencesService;
 
   async onload(): Promise<void> {
     const localization = this.localization = createLocalization(moment.locale());
-    const cache = this.cache = new PersistentLibraryCache(createObsidianCacheStorage(this.app.vault.adapter,
-      this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`));
-    this.registerView(VIEW_TYPE, leaf => new GalleryView(leaf, cache, this.budget));
+    const directory = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    const cache = this.cache = new PersistentLibraryCache(createObsidianCacheStorage(this.app.vault.adapter, directory));
+    const preferences = this.preferences = new PreferencesService(createObsidianPreferencesStorage(this.app.vault.adapter, directory),
+      Platform.isMobile ? 'mobile' : 'desktop');
+    await preferences.load();
+    this.registerView(VIEW_TYPE, leaf => new GalleryView(leaf, cache, this.budget, preferences));
     const open = () => {
       void this.openGallery().catch(error => {
         console.error('Just Book Reader: unable to open library', error);
@@ -88,6 +105,7 @@ export default class JustBookReader extends Plugin {
   onunload(): void {
     this.app.workspace.detachLeavesOfType(VIEW_TYPE);
     void this.cache?.flush();
+    this.preferences?.dispose();
     this.localization?.dispose();
     this.localization = undefined;
   }

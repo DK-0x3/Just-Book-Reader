@@ -29,9 +29,11 @@ test('searches known titles and authors, sorts, clears search and distinguishes 
   await expect(page.getByText('Файлы EPUB не найдены.', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Очистить поиск', exact: true }).click();
   await expect(search).toBeFocused();
-  await page.getByRole('combobox', { name: 'Сортировать по', exact: true }).selectOption('author');
+  await page.getByRole('combobox', { name: 'Сортировать по', exact: true }).click();
+  await page.getByRole('option', { name: 'Автору', exact: true }).click();
   await expect(titles).toHaveText(['Йога', 'Ёжик', 'Атлас']);
-  await page.getByRole('combobox', { name: 'Сортировать по', exact: true }).selectOption('title');
+  await page.getByRole('combobox', { name: 'Сортировать по', exact: true }).click();
+  await page.getByRole('option', { name: 'Названию', exact: true }).click();
   await expect(titles).toHaveText(['Атлас', 'Ёжик', 'Йога']);
 });
 
@@ -132,6 +134,9 @@ test('details and controls fit narrow screens and use both locales', async ({ pa
     await trigger.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    const heading = await dialog.getByRole('heading', { name: 'Сведения о книге', exact: true }).boundingBox();
+    const close = await dialog.getByRole('button', { name: 'Закрыть', exact: true }).boundingBox();
+    expect(Math.abs((heading!.y + heading!.height / 2) - (close!.y + close!.height / 2))).toBeLessThan(8);
     const bounds = await dialog.boundingBox();
     expect(bounds?.x).toBeGreaterThanOrEqual(0);
     expect(bounds?.y).toBeGreaterThanOrEqual(0);

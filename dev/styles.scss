@@ -1,3 +1,5 @@
+@use '../src/ui/themes';
+
 :root {
   color-scheme: dark;
   --background-primary: #1e1e22;
@@ -15,10 +17,17 @@ body {
 }
 
 .dev-shell {
+  display: flex;
+  flex-direction: column;
   min-height: 100dvh;
+
+  > .jbr-gallery {
+    flex: 1;
+  }
 }
 
 .dev-toolbar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 12px;

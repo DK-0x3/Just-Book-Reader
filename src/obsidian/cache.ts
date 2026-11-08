@@ -14,15 +14,26 @@ export function createObsidianCacheStorage(adapter: DataAdapter, pluginDirectory
     if (!await adapter.exists(covers)) await adapter.mkdir(covers);
   }
   return {
-    async readIndex() { return await adapter.exists(index) ? adapter.read(index) : undefined; },
+    async readIndex() {
+      return await adapter.exists(index) ? adapter.read(index) : undefined;
+    },
     async writeIndex(json) {
       await prepare();
       if (await adapter.exists(index)) await adapter.process(index, () => json);
       else await adapter.write(index, json);
     },
-    async readCover(key) { const path = coverPath(key); return await adapter.exists(path) ? adapter.readBinary(path) : undefined; },
-    async writeCover(key, bytes) { await prepare(); await adapter.writeBinary(coverPath(key), bytes); },
-    async removeCover(key) { const path = coverPath(key); if (await adapter.exists(path)) await adapter.remove(path); },
+    async readCover(key) {
+      const path = coverPath(key);
+      return await adapter.exists(path) ? adapter.readBinary(path) : undefined;
+    },
+    async writeCover(key, bytes) {
+      await prepare();
+      await adapter.writeBinary(coverPath(key), bytes);
+    },
+    async removeCover(key) {
+      const path = coverPath(key);
+      if (await adapter.exists(path)) await adapter.remove(path);
+    },
     async listCovers() {
       if (!await adapter.exists(covers)) return [];
       return (await adapter.list(covers)).files.map(path => path.slice(covers.length + 1)).filter(key => /^[a-f0-9-]{36}$/.test(key));

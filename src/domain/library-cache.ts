@@ -4,7 +4,12 @@ export interface CachedBook extends BookFile {
   readonly title?: string;
   readonly author?: string;
   readonly hasCover: boolean;
-  readonly cover?: { readonly key: string; readonly size: number; readonly type: string; readonly used: number };
+  readonly cover?: {
+    readonly key: string;
+    readonly size: number;
+    readonly type: string;
+    readonly used: number;
+  };
 }
 
 /** Text remains indexed when a binary cover is evicted. */

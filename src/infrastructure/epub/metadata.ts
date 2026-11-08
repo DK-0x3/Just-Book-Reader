@@ -63,7 +63,10 @@ export async function boundedEntry(zip: JSZip, path: string, limit: number, sign
       if (settled) return;
       total += chunk.length;
       // Stop inflation before the whole resource is allocated, including compressed ZIP bombs.
-      if (total > limit) { fail(new Error('resource-too-large')); return; }
+      if (total > limit) {
+        fail(new Error('resource-too-large'));
+        return;
+      }
       chunks.push(chunk);
     });
     stream.on('error', fail);
@@ -73,7 +76,10 @@ export async function boundedEntry(zip: JSZip, path: string, limit: number, sign
       signal.removeEventListener('abort', abort);
       const result = new Uint8Array(total);
       let offset = 0;
-      for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.length;
+      }
       chunks.length = 0;
       resolve(result);
     });

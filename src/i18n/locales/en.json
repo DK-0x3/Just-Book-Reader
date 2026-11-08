@@ -47,5 +47,16 @@
     "clearFiles": "Clear files",
     "closeView": "Close view",
     "openView": "Open view"
+  },
+  "appearance": {
+    "theme": "Theme",
+    "obsidian": "Obsidian",
+    "dark": "Dark",
+    "light": "Light",
+    "sepia": "Sepia",
+    "eink": "E-ink",
+    "saving": "Saving…",
+    "loadError": "Could not load preferences. Saved data has not been changed.",
+    "saveError": "Could not save the theme. Your previous theme has been restored."
   }
 }

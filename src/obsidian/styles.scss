@@ -1,3 +1,5 @@
+@use '../ui/themes';
+
 // Obsidian owns this container; keep its integration class global and stable.
 .jbr-view-content {
   padding: 0 !important;

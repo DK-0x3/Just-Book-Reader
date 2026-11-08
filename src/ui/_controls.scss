@@ -1,0 +1,44 @@
+@mixin focus {
+  outline: 2px solid var(--jbr-focus);
+  outline-offset: 3px;
+}
+
+@mixin control {
+  appearance: none;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  max-width: 100%;
+  margin: 0;
+  padding: 9px 13px;
+  border: 1px solid var(--jbr-border);
+  border-radius: 9px;
+  background: var(--jbr-surface);
+  color: var(--jbr-text);
+  box-shadow: none;
+  font: inherit;
+  line-height: 1.4;
+  white-space: normal;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--jbr-hover);
+    border-color: var(--jbr-accent);
+  }
+
+  &:active:not(:disabled) {
+    background: var(--jbr-selected);
+  }
+
+  &:focus-visible {
+    @include focus;
+  }
+
+  &:disabled {
+    opacity: .6;
+    cursor: default;
+  }
+}
